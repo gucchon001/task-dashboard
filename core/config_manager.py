@@ -5,7 +5,7 @@ class ConfigManager:
     """
     設定ファイル(config.json)の読み書きを管理するクラス。
     """
-    def __init__(self, path='config.json'):
+    def __init__(self, path='data/config.json'):
         """
         コンストラクタ。設定ファイルのパスを受け取り、初期化する。
         :param path: config.jsonへのファイルパス。
