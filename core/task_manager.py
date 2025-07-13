@@ -62,7 +62,7 @@ class TaskManager:
         # 段階的コマンド実行
         logging.info(f"=== 段階的コマンド実行開始: {pc_ip} ===")
         
-        # ステップ1: 基本的なタスク取得とデバッグ
+        # ステップ1: 基本的なタスク取得とデバッグ（Author絞り込みなし）
         step1_command = f"""
             [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
             $allTasks = Get-ScheduledTask
@@ -82,6 +82,74 @@ class TaskManager:
             "空文字列条件: $emptyPathCount件"
             "バックスラッシュ条件: $backslashCount件"
             "null条件: $nullCount件"
+        """
+        
+        # ステップ1.5: Authorによる絞り込み（手動作成タスクのみ）
+        step1_5_command = f"""
+            [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+            $manualTasks = Get-ScheduledTask | Where-Object {{ 
+                $_.Author -like '*\\*' -and 
+                $_.Author -notlike '*NT AUTHORITY*' -and
+                $_.Author -notlike '*$(@%SystemRoot%*' -and
+                $_.Author -notlike '*$(@%systemroot%*'
+            }}
+            "手動作成タスク数: $($manualTasks.Count)"
+            "手動作成タスクの最初の5件:"
+            $manualTasks | Select-Object -First 5 | ForEach-Object {{ 
+                "TaskName: $($_.TaskName), Author: $($_.Author), TaskPath: '$($_.TaskPath)'" 
+            }}
+            
+            # 詳細情報を取得
+            $result = @()
+            foreach ($task in $manualTasks) {{
+                $nextRun = $null
+                $lastRun = $null
+                $lastTaskResult = $null
+                
+                try {{
+                    $taskInfo = Get-ScheduledTaskInfo -TaskName $task.TaskName -ErrorAction SilentlyContinue
+                    if ($taskInfo) {{
+                        if ($taskInfo.NextRunTime) {{
+                            $nextRun = $taskInfo.NextRunTime.ToString("yyyy-MM-dd HH:mm:ss")
+                        }}
+                        if ($taskInfo.LastRunTime) {{
+                            $lastRun = $taskInfo.LastRunTime.ToString("yyyy-MM-dd HH:mm:ss")
+                        }}
+                        if ($taskInfo.LastTaskResult -ne $null) {{
+                            $lastTaskResult = $taskInfo.LastTaskResult
+                        }}
+                    }}
+                }} catch {{
+                    if ($task.NextRunTime) {{
+                        $nextRun = $task.NextRunTime.ToString("yyyy-MM-dd HH:mm:ss")
+                    }}
+                    if ($task.LastRunTime) {{
+                        $lastRun = $task.LastRunTime.ToString("yyyy-MM-dd HH:mm:ss")
+                    }}
+                }}
+                
+                $taskInfo = [PSCustomObject]@{{
+                    TaskName = $task.TaskName
+                    State = $task.State
+                    NextRunTime = $nextRun
+                    LastRunTime = $lastRun
+                    LastTaskResult = if ($lastTaskResult -ne $null) {{ $lastTaskResult }} else {{ $task.LastTaskResult }}
+                    Description = $task.Description
+                    TaskPath = $task.TaskPath
+                    Author = $task.Author
+                    Trigger = (($task.Triggers | ForEach-Object {{
+                        "Enabled: $($_.Enabled)`n" +
+                        "StartBoundary: $($_.StartBoundary)`n" +
+                        "EndBoundary: $($_.EndBoundary)`n" +
+                        "ExecutionTimeLimit: $($_.ExecutionTimeLimit)`n" +
+                        "Id: $($_.Id)`n" +
+                        "Repetition: $($_.Repetition)"
+                    }}) -join '; ')
+                }}
+                $result += $taskInfo
+            }}
+            
+            $result | ConvertTo-Json -Compress -Depth 3
         """
         
         # 方法2: schtasksコマンドを使用
@@ -136,6 +204,14 @@ class TaskManager:
         if success:
             logging.info(f"方法1結果: {debug_result}")
         
+        # ステップ1.5: Authorによる絞り込みを実行
+        success1_5, debug_result1_5 = self._execute_ps_command(pc_ip, step1_5_command)
+        if success1_5:
+            logging.info(f"方法1.5結果: {debug_result1_5}")
+            # Author絞り込みが成功した場合は、その結果を処理
+            if "手動作成タスク数:" in debug_result1_5:
+                return self._process_tasks_from_result(debug_result1_5, pc_ip)
+        
         # 方法2を実行
         success2, debug_result2 = self._execute_ps_command(pc_ip, step2_command)
         if success2:
@@ -146,8 +222,11 @@ class TaskManager:
         if success3:
             logging.info(f"方法3結果: {debug_result3}")
         
-        # 最も効果的な方法を選択
-        if success and "ルートタスク数: 0" not in debug_result:
+        # 最も効果的な方法を選択（Author絞り込みを優先）
+        if success1_5 and "手動作成タスク数:" in debug_result1_5:
+            logging.info("方法1.5（Author絞り込み）が成功")
+            return self._process_tasks_from_result(debug_result1_5, pc_ip)
+        elif success and "ルートタスク数: 0" not in debug_result:
             logging.info("方法1（Get-ScheduledTask）が成功")
             return self._process_tasks_from_result(debug_result, pc_ip)
         elif success2 and "schtasks成功" in debug_result2:
@@ -167,10 +246,27 @@ class TaskManager:
         logging.info(f"=== タスク情報抽出開始: {pc_ip} ===")
         tasks = []
         try:
-            # 改行文字を除去してからJSON解析
-            cleaned_result = debug_result.strip().replace('\r', '').replace('\n', '')
+            # 出力からJSON部分のみを抽出
+            lines = debug_result.strip().split('\n')
+            json_start = -1
+            
+            # JSONデータの開始位置を探す
+            for i, line in enumerate(lines):
+                if line.strip().startswith('[') or line.strip().startswith('{'):
+                    json_start = i
+                    break
+            
+            if json_start == -1:
+                logging.error(f"JSONデータが見つかりません: {pc_ip}")
+                logging.error(f"Raw result: {debug_result[:500]}...")
+                return []
+            
+            # JSON部分のみを抽出
+            json_lines = lines[json_start:]
+            json_data = '\n'.join(json_lines)
+            
             logging.info(f"JSON解析開始: {pc_ip}")
-            tasks = json.loads(cleaned_result)
+            tasks = json.loads(json_data)
             # 単一のタスクの場合、リストに変換
             if isinstance(tasks, dict):
                 tasks = [tasks]
@@ -254,11 +350,27 @@ class TaskManager:
         logging.info(f"=== タスク情報抽出開始: {pc_ip} ===")
         tasks = []
         try:
-            # WMIの結果はPSCustomObjectのリストとして返される
-            # 改行文字を除去してからJSON解析
-            cleaned_result = debug_result.strip().replace('\r', '').replace('\n', '')
+            # 出力からJSON部分のみを抽出
+            lines = debug_result.strip().split('\n')
+            json_start = -1
+            
+            # JSONデータの開始位置を探す
+            for i, line in enumerate(lines):
+                if line.strip().startswith('[') or line.strip().startswith('{'):
+                    json_start = i
+                    break
+            
+            if json_start == -1:
+                logging.error(f"JSONデータが見つかりません: {pc_ip}")
+                logging.error(f"Raw result: {debug_result[:500]}...")
+                return []
+            
+            # JSON部分のみを抽出
+            json_lines = lines[json_start:]
+            json_data = '\n'.join(json_lines)
+            
             logging.info(f"JSON解析開始: {pc_ip}")
-            tasks = json.loads(cleaned_result)
+            tasks = json.loads(json_data)
             # 単一のタスクの場合、リストに変換
             if isinstance(tasks, dict):
                 tasks = [tasks]
