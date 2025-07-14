@@ -29,7 +29,6 @@ from ui.dashboard import render_dashboard
 from ui.logs import render_logs
 from ui.pc_info import render_pc_info
 from ui.reports import render_reports
-from ui.admin import render_admin_settings
 
 # --- ログ設定 ---
 import logging
@@ -188,7 +187,7 @@ with st.sidebar:
     if st.button("ダッシュボード", use_container_width=True): st.session_state.current_view = 'dashboard'
     if st.button("実行結果ログ", use_container_width=True): st.session_state.current_view = 'logs'
     if st.button("レポート", use_container_width=True): st.session_state.current_view = 'reports'
-    if st.button("管理者設定", use_container_width=True): st.session_state.current_view = 'admin'
+    if st.button("PC情報", use_container_width=True): st.session_state.current_view = 'pc_info'
 
 # --- メインコンテンツの表示 ---
 if st.session_state.current_view == 'dashboard':
@@ -197,5 +196,5 @@ elif st.session_state.current_view == 'logs':
     render_logs()
 elif st.session_state.current_view == 'reports':
     render_reports()
-elif st.session_state.current_view == 'admin':
-    render_admin_settings() 
+elif st.session_state.current_view == 'pc_info':
+    render_pc_info() 
