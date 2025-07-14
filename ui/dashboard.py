@@ -41,19 +41,10 @@ def render_pc_tasks(pcs_to_scan, title):
     """指定されたPCのタスクを表示する関数"""
     st.subheader(f"タスク一覧 ({title} - 手動作成タスク)")
     
-    # ソートと新規作成の設定
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        # 並べ替え機能を追加
-        if f'sort_order_{title}' not in st.session_state:
-            st.session_state[f'sort_order_{title}'] = "次回実行日時順"
-        sort_order = st.selectbox("並べ替え順序", ["次回実行日時順", "作成日時順", "タスク名順"], key=f"sort_{title}")
-        st.session_state[f'sort_order_{title}'] = sort_order
-    
-    with col2:
-        if st.button("＋ 新規タスクを作成", type="primary", use_container_width=True, key=f"create_{title}"):
-            from ui.dialogs import create_task_dialog
-            create_task_dialog()
+    # 新規作成ボタン
+    if st.button("＋ 新規タスクを作成", type="primary", use_container_width=True, key=f"create_{title}"):
+        from ui.dialogs import create_task_dialog
+        create_task_dialog()
     
     # タスク情報の取得
     all_tasks = []
@@ -124,14 +115,6 @@ def render_pc_tasks(pcs_to_scan, title):
         st.info("フィルタ条件に一致するタスクは見つかりませんでした。")
         return
     
-    # 並べ替え処理
-    if st.session_state[f'sort_order_{title}'] == "次回実行日時順":
-        df = df.sort_values('NextRunTime', na_position='last')
-    elif st.session_state[f'sort_order_{title}'] == "作成日時順":
-        df = df.sort_values('LastRunTime', na_position='last')
-    elif st.session_state[f'sort_order_{title}'] == "タスク名順":
-        df = df.sort_values('TaskName')
-    
     # 統計情報の表示
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -152,28 +135,54 @@ def render_pc_tasks(pcs_to_scan, title):
     # テーブル形式でのタスク表示
     st.subheader("タスク詳細一覧")
     
-    # ページネーション
-    items_per_page = 100  # 1ページあたりの表示件数を100件に設定
+    # 並び替え機能をヘッダーの上に配置
+    col1, col2, col3 = st.columns([2, 1, 0.3])
+    with col1:
+        st.write("")  # 空のスペース
+    with col2:
+        if f'sort_order_{title}' not in st.session_state:
+            st.session_state[f'sort_order_{title}'] = "次回実行日時順"
+        sort_order = st.selectbox("並べ替え", ["次回実行日時順", "作成日時順", "タスク名順"], key=f"sort_{title}", label_visibility="collapsed")
+        st.session_state[f'sort_order_{title}'] = sort_order
+    with col3:
+        if f'sort_direction_{title}' not in st.session_state:
+            st.session_state[f'sort_direction_{title}'] = "昇順"
+        sort_direction = st.selectbox("順序", ["昇順", "降順"], key=f"direction_{title}", label_visibility="collapsed")
+        st.session_state[f'sort_direction_{title}'] = sort_direction
+    
+    # 並び替え処理
+    ascending = st.session_state[f'sort_direction_{title}'] == "昇順"
+    
+    if st.session_state[f'sort_order_{title}'] == "次回実行日時順":
+        df = df.sort_values('NextRunTime', ascending=ascending, na_position='last')
+    elif st.session_state[f'sort_order_{title}'] == "作成日時順":
+        df = df.sort_values('LastRunTime', ascending=ascending, na_position='last')
+    elif st.session_state[f'sort_order_{title}'] == "タスク名順":
+        df = df.sort_values('TaskName', ascending=ascending)
+    
+    # ページネーション（シンプル・右寄せ）
+    items_per_page = 100  # 1ページあたりの表示件数
     if f'current_page_{title}' not in st.session_state:
         st.session_state[f'current_page_{title}'] = 0
-    
     total_pages = (len(df) - 1) // items_per_page + 1
     start_idx = st.session_state[f'current_page_{title}'] * items_per_page
     end_idx = min(start_idx + items_per_page, len(df))
-    
-    # ページネーションコントロール
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col1:
-        if st.button("← 前のページ", disabled=st.session_state[f'current_page_{title}'] == 0, key=f"prev_{title}"):
-            st.session_state[f'current_page_{title}'] = max(0, st.session_state[f'current_page_{title}'] - 1)
-            st.rerun()
-    with col2:
-        st.write(f"ページ {st.session_state[f'current_page_{title}'] + 1} / {total_pages} ({start_idx + 1}-{end_idx} / {len(df)}件)")
-    with col3:
-        if st.button("次のページ →", disabled=st.session_state[f'current_page_{title}'] >= total_pages - 1, key=f"next_{title}"):
-            st.session_state[f'current_page_{title}'] = min(total_pages - 1, st.session_state[f'current_page_{title}'] + 1)
-            st.rerun()
-    
+
+    # 右寄せレイアウト
+    col_space, col_pager = st.columns([6, 1])
+    with col_pager:
+        pager_col1, pager_col2, pager_col3 = st.columns([1, 2, 1])
+        with pager_col1:
+            if st.button("＜", disabled=st.session_state[f'current_page_{title}'] == 0, key=f"prev_{title}"):
+                st.session_state[f'current_page_{title}'] = max(0, st.session_state[f'current_page_{title}'] - 1)
+                st.rerun()
+        with pager_col2:
+            st.markdown(f"<div style='text-align:center; padding-top: 6px; font-weight:bold;'>{st.session_state[f'current_page_{title}'] + 1} / {total_pages}</div>", unsafe_allow_html=True)
+        with pager_col3:
+            if st.button("＞", disabled=st.session_state[f'current_page_{title}'] >= total_pages - 1, key=f"next_{title}"):
+                st.session_state[f'current_page_{title}'] = min(total_pages - 1, st.session_state[f'current_page_{title}'] + 1)
+                st.rerun()
+
     # 現在のページのタスクを表示
     current_page_df = df.iloc[start_idx:end_idx]
     
@@ -187,6 +196,14 @@ def render_pc_tasks(pcs_to_scan, title):
     col6.markdown("<div style='text-align: center; background: #3498db; color: white; padding: 12px 8px; border-radius: 4px; font-weight: bold;'><strong>⏱ 開始時刻</strong></div>", unsafe_allow_html=True)
     col7.markdown("<div style='text-align: center; background: #3498db; color: white; padding: 12px 8px; border-radius: 4px; font-weight: bold;'><strong>実行</strong></div>", unsafe_allow_html=True)
     col8.markdown("<div style='text-align: center; background: #3498db; color: white; padding: 12px 8px; border-radius: 4px; font-weight: bold;'><strong>詳細</strong></div>", unsafe_allow_html=True)
+    
+    # 並び替え処理
+    if st.session_state[f'sort_order_{title}'] == "次回実行日時順":
+        df = df.sort_values('NextRunTime', na_position='last')
+    elif st.session_state[f'sort_order_{title}'] == "作成日時順":
+        df = df.sort_values('LastRunTime', na_position='last')
+    elif st.session_state[f'sort_order_{title}'] == "タスク名順":
+        df = df.sort_values('TaskName')
     
     # ヘッダーとボディの間にマージンを追加
     st.markdown("<div style='margin: 20px 0;'></div>", unsafe_allow_html=True)
