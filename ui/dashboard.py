@@ -39,7 +39,15 @@ def render_dashboard():
 
 def render_pc_tasks(pcs_to_scan, title):
     """指定されたPCのタスクを表示する関数"""
-    st.subheader(f"タスク一覧 ({title} - 手動作成タスク)")
+    st.subheader(f"タスク一覧 ({title}")
+    
+    # PC情報の読み込みインジケータ（アコーディオンの外に配置）
+    pc_progress_bar = st.progress(0, text="PC情報を取得中...")
+    
+    # PC情報をアコーディオン形式で表示（タスク一覧ヘッダーの直下）
+    with st.expander("📊 PC情報", expanded=False):
+        from ui.pc_info import render_pc_info_with_progress
+        render_pc_info_with_progress(pc_progress_bar)
     
     # 新規作成ボタン
     if st.button("＋ 新規タスクを作成", type="primary", use_container_width=True, key=f"create_{title}"):

@@ -48,8 +48,8 @@ logging.basicConfig(
 
 # --- Streamlit アプリケーション設定 ---
 st.set_page_config(
-    page_title="タスク管理ダッシュボード", 
-    page_icon="🤖", 
+    page_title="タスくん v1.0", 
+    page_icon="⚡", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -173,23 +173,25 @@ if 'initialized' not in st.session_state:
     # TODO: 認証情報を安全に取得する
     DUMMY_USER, DUMMY_PASS = "YOUR_USERNAME", "YOUR_PASSWORD"
     st.session_state.task_manager = TaskManager(st.session_state.config_manager, st.session_state.db_manager, DUMMY_USER, DUMMY_PASS)
-    st.session_state.current_view = 'pc_info'  # デフォルトをPC情報に変更
+    st.session_state.current_view = 'dashboard'  # デフォルトをダッシュボードに変更
     st.session_state.initialized = True
     logging.info("=== アプリケーション初期化完了 ===")
 
 # --- サイドバーと画面切り替え ---
 with st.sidebar:
+    # サイト名をサイドバーの一番上に表示
+    st.markdown("**タスクスケジューラー管理ツール**")
+    st.markdown("**⚡ タスくん v1.0**")
+    st.write("---")
+    
     st.title("メニュー")
-    if st.button("PC情報", use_container_width=True): st.session_state.current_view = 'pc_info'
     if st.button("ダッシュボード", use_container_width=True): st.session_state.current_view = 'dashboard'
     if st.button("実行結果ログ", use_container_width=True): st.session_state.current_view = 'logs'
     if st.button("レポート", use_container_width=True): st.session_state.current_view = 'reports'
     if st.button("管理者設定", use_container_width=True): st.session_state.current_view = 'admin'
 
 # --- メインコンテンツの表示 ---
-if st.session_state.current_view == 'pc_info':
-    render_pc_info()
-elif st.session_state.current_view == 'dashboard':
+if st.session_state.current_view == 'dashboard':
     render_dashboard()
 elif st.session_state.current_view == 'logs':
     render_logs()
